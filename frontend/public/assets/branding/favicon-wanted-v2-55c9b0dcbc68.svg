@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+<title id="title">Personal Wiki — Wanted Sans W</title>
+<defs>
+  <linearGradient id="glass" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#345d47"/><stop offset=".5" stop-color="#1c3529"/><stop offset="1" stop-color="#14291f"/></linearGradient>
+  <linearGradient id="edge" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#cde8d2" stop-opacity=".9"/><stop offset="1" stop-color="#80b595" stop-opacity=".35"/></linearGradient>
+</defs>
+<rect x="1" y="1" width="62" height="62" rx="14" fill="url(#glass)" stroke="url(#edge)" stroke-width="1.5"/>
+<path fill="#e1f0df" transform="translate(9.561025 46.671118) scale(0.02026398 -0.02026398)" d="M34 1448H395.3333333333333L808.6666666666666 0L558.6666666666666 462.66666666666663H808.6666666666666V0H498ZM956 1448H1187.3333333333333L1211.3333333333333 1267.3333333333333V888H1003.3333333333334L1211.3333333333333 1267.3333333333333L850 0H558.6666666666666ZM1003.3333333333334 1267.3333333333333 1027.3333333333333 1448H1258.6666666666667L1656 0L1406 462.66666666666663H1656V0H1364.6666666666667ZM1819.3333333333333 1448H2180.6666666666665L1716.6666666666667 0H1406Z"/>
+</svg>

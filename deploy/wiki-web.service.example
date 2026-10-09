@@ -1,0 +1,23 @@
+# User service example. Adjust paths to your checkout and private config.
+# Codex authentication stays in this user's external profile; never copy it into Git.
+[Unit]
+Description=Private Markdown Q&A
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/wiki-web
+Environment=WIKI_CONFIG=%h/.config/wiki-web/config.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=%h/apps/wiki-web/.venv/bin/python %h/apps/wiki-web/backend/server.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

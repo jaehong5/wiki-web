@@ -1,0 +1,41 @@
+# Include from Nginx's http context. Cloudflare Tunnel points to this loopback listener.
+# Replace wiki.example.com and the static web root for your installation.
+limit_req_zone $binary_remote_addr zone=wiki_web:10m rate=10r/s;
+
+server {
+    listen 127.0.0.1:8081;
+    server_name wiki.example.com;
+    root /srv/wiki-web/public;
+    index index.html;
+    server_tokens off;
+    limit_req zone=wiki_web burst=40 nodelay;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
+
+    location ~ /\. {
+        access_log off;
+        return 404;
+    }
+
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:8093;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Cf-Access-Jwt-Assertion $http_cf_access_jwt_assertion;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_buffering off;
+        client_max_body_size 40k;
+        access_log off;
+        # Defining headers here overrides server-level add_header directives.
+        add_header Cache-Control no-store always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

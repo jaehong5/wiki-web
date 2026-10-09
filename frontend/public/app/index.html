@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#18231f">
+  <title>노트에 물어보기 · Wiki</title>
+  <link rel="icon" href="/assets/branding/favicon-wanted-v2-8c47d8a5119b.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/branding/favicon-wanted-v2-55c9b0dcbc68.svg" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="/assets/branding/favicon-wanted-v2-32-8d9cd055de25.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/branding/apple-wanted-v2-f951e3483696.png" sizes="180x180">
+  <link rel="preload" href="/assets/branding/fonts/wanted-sans-variable-1.0.3.woff2?v=4259e7e9a172" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/branding/fonts.css?v=6834f8794d04">
+  <link rel="stylesheet" href="/style.css?v=aa6bde8af3c5">
+  <link rel="stylesheet" href="/glass.css?v=0a08e044909f">
+  <script src="/app.js?v=9df7191060a5" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/app/" aria-label="Wiki 처음으로"><span class="mark">W</span><span>Personal Wiki</span></a>
+      <div class="collection"><span class="eyebrow">YOUR COLLECTION</span><h2>SilverBullet</h2><p id="note-count">노트를 확인하고 있어요.</p></div>
+      <button id="reset" class="new-chat" type="button"><span>＋</span> 새 질문 시작</button>
+      <div class="side-bottom"><a href="https://notes.example.com/" target="_blank" rel="noopener noreferrer">SilverBullet 열기 ↗</a><p>노트를 읽고, 근거를 찾아 답합니다.</p></div>
+    </aside>
+    <main>
+      <header><span class="eyebrow">NOTES / ASK</span><span class="status"><i></i> 내 노트와 대화하기</span></header>
+      <section class="welcome" id="welcome">
+        <span class="intro-label">흩어진 메모에서, 필요한 답으로.</span>
+        <h1>노트에<br><em>물어보세요.</em></h1>
+        <p>기억이 흐릿해도 괜찮아요.<br>SilverBullet에 적어둔 내용을 찾아 함께 확인해요.</p>
+        <div class="suggestions">
+          <button type="button" data-question="회사 데스크톱의 이름과 접속 주소를 정리해줘."><span>접속 정보</span>회사 데스크톱 주소가 뭐였지? ↗</button>
+          <button type="button" data-question="내 노트에 기록된 서버와 서비스 구성을 정리해줘. 현재 실측이 아니라 노트에 적힌 내용 기준으로 알려줘."><span>인프라 메모</span>서버 구성을 한눈에 정리해줘 ↗</button>
+          <button type="button" data-question="노트의 주요 주제를 정리하고, 어디에 어떤 내용이 있는지 안내해줘."><span>노트 탐색</span>내 노트에는 어떤 내용이 있어? ↗</button>
+        </div>
+      </section>
+      <section id="messages" class="messages" aria-label="질문과 답변" aria-live="polite"></section>
+      <div class="composer-wrap">
+        <p id="notice" class="notice" role="status"></p>
+        <button id="reauthenticate" class="reauthenticate" type="button" data-reauthenticate hidden>다시 로그인하고 질문 이어받기</button>
+        <form id="question-form" class="composer">
+          <label for="question" class="sr-only">SilverBullet 노트에 관한 질문</label>
+          <textarea id="question" maxlength="4000" rows="2" placeholder="노트에서 찾고 싶은 내용을 물어보세요…" required></textarea>
+          <div class="composer-footer"><span>노트 원문을 바꾸지 않고 답해요.</span><button id="send" type="submit" aria-label="질문 보내기">보내기 <span>↑</span></button><button id="cancel" type="button" hidden>중단</button></div>
+        </form>
+        <p class="footnote">답변이 실제 상황과 다를 수 있어요. 참고 문서에서 기록을 확인해주세요.</p>
+      </div>
+    </main>
+  </div>
+  <dialog id="source-dialog" aria-labelledby="source-title"><div class="dialog-heading"><h2 id="source-title"></h2><button id="close-source" type="button" aria-label="문서 닫기">✕</button></div><p class="source-note">노트에 저장된 원문입니다.</p><pre id="source-content"></pre><button id="source-reauthenticate" class="reauthenticate" type="button" data-reauthenticate hidden>다시 로그인하기</button></dialog>
+</body>
+</html>

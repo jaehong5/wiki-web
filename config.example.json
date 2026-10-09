@@ -1,0 +1,9 @@
+{
+  "origin": "https://wiki.example.com",
+  "issuer": "https://your-team.cloudflareaccess.com",
+  "audience": "YOUR_ACCESS_APPLICATION_AUDIENCE",
+  "notes_root": "/srv/wiki-notes",
+  "model": "YOUR_MODEL_ID",
+  "codex": "codex",
+  "port": 8093
+}

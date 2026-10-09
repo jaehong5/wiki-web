@@ -1,0 +1,41 @@
+# Private installation settings and credentials
+config.json
+config.local.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.codex/
+.cloudflared/
+credentials/
+
+# Personal content and runtime artifacts belong outside this checkout.
+/notes/
+/data/
+/state/
+/logs/
+/backups/
+/reports/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.orig
+*.tar
+*.tar.gz
+*.zip
+
+# Local tooling, generated sites, and test output
+.venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage/
+dist/
+test-results/
+playwright-report/
+.DS_Store

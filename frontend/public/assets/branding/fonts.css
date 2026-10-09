@@ -1,0 +1,24 @@
+/* Self-hosted fonts; licenses and release provenance are in ./fonts/. */
+@font-face {
+  font-family: "Wanted Sans";
+  src: url("./fonts/wanted-sans-variable-1.0.3.woff2?v=4259e7e9a172") format("woff2");
+  font-style: normal;
+  font-weight: 400 1000;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "D2Coding";
+  src: url("./fonts/d2coding-regular-1.4.0.woff2?v=76def7a188d1") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "D2Coding";
+  src: url("./fonts/d2coding-bold-1.4.0.woff2?v=95d47a0c9056") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}

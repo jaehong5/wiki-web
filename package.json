@@ -1,0 +1,12 @@
+{
+  "name": "wiki-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A private Markdown question-and-answer web application",
+  "scripts": {
+    "test:browser": "node tests/test_browser.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

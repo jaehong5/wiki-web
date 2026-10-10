@@ -175,7 +175,12 @@ node scripts/render_app_icons.cjs
 ```
 
 This also refreshes the manifest URL in both HTML pages. Icon filenames include
-content hashes, and a separate maskable icon keeps the W inside the platform crop.
+content hashes. The renderer uses one font scale (Wanted Sans 800, 28-unit cap
+height on a 64-unit canvas), so related letter icons keep the same type size and
+stroke weight. Regular and maskable variants use identical letter geometry;
+the maskable background fills the entire square. The exported `renderAppIcons`
+function accepts another public root, outline filename and output prefix without
+embedding deployment-specific settings.
 
 ## Repository boundaries
 

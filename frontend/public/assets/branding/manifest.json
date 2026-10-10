@@ -11,19 +11,19 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/assets/branding/app-wanted-any-192-4919883a2766.png",
+      "src": "/assets/branding/app-wanted-any-192-84bf805b913c.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/branding/app-wanted-any-512-de2aa087ea7f.png",
+      "src": "/assets/branding/app-wanted-any-512-109bcf82f7c5.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/branding/app-wanted-maskable-512-0cf4a4eceea8.png",
+      "src": "/assets/branding/app-wanted-maskable-512-429fa5128c04.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

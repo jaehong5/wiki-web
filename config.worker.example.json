@@ -1,0 +1,12 @@
+{
+  "origin": "https://wiki.example.com",
+  "issuer": "https://your-team.cloudflareaccess.com",
+  "audience": "YOUR_ACCESS_APPLICATION_AUDIENCE",
+  "notes_root": "/srv/wiki-notes",
+  "port": 8093,
+  "ai": {
+    "provider": "codex",
+    "socket": "/run/wiki-model/worker.sock",
+    "worker_user": "wiki-model"
+  }
+}

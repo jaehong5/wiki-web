@@ -14,7 +14,7 @@ def load_test_app():
     atexit.register(fixture.cleanup)
     root = Path(fixture.name)
     source = Path(__file__).resolve().parents[1] / 'backend'
-    for name in ('server.py', 'privacy.py', 'privacy_analysis.py', 'model_input.py', 'settings.py'):
+    for name in (path.name for path in source.glob('*.py')):
         shutil.copy2(source / name, root / name)
     (root / 'notes').mkdir()
     (root / 'config.json').write_text(json.dumps({

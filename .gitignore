@@ -1,12 +1,16 @@
 # Private installation settings and credentials
 config.json
 config.local.json
+config.worker.json
+model-worker.json
+model-worker.local.json
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 .codex/
+.gemini/
 .cloudflared/
 credentials/
 

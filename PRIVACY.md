@@ -27,8 +27,9 @@ All note, question and history text now follows one analysis path:
    credentials pasted into a question and values first identified in history.
 3. `model_input.py` constructs only the selector and answer payload schemas,
    freezes their content and checks it against the registry.
-   The CLI entrypoint accepts only a prepared prompt and repeats that check before
-   starting a subprocess. Conversation roles, generated document IDs and citation
+   The model entrypoint accepts only a prepared prompt and repeats that check before
+   transmitting it to the isolated worker (or invoking legacy direct Codex).
+   Conversation roles, generated document IDs and citation
    numbers are validated as structure, separately from question/history text,
    titles, headings, search hints and evidence. Unknown fields, invalid roles or
    document IDs, and evidence with a combined raw line/number string are rejected.
@@ -38,6 +39,12 @@ All note, question and history text now follows one analysis path:
    source's adjacent character classes. Removing tokens or reinterpreting their
    brackets must not invent a new match in neighboring text. Unknown token-looking
    strings are not exempt from the audit.
+
+The selector's catalog includes Markdown headings and short plain-text labels
+adjacent to masked values, so a flat note can still be found by product or field
+name. These labels are extracted only after all inputs are registered and masked,
+and pass the same outbound audit as the rest of the catalog. Inline placeholders
+and their surrounding syntax are retained rather than cut into new text fragments.
 
 Explicit private ranges remain protected when inferred syntax is malformed.
 If a recognized sensitive construct is malformed or uses a reference that cannot
@@ -158,12 +165,16 @@ allowance. Prepared model payloads are bounded to 2 MiB. Dependency APIs and
 source positions are exercised by synthetic parser tests rather than assumed
 from regular-expression matches.
 
-The CLI result file is limited to 1 MiB before JSON decoding. Model answer text
+Codex result files and worker responses are limited to 1 MiB. AGY's streamed event
+output is limited to 4 MiB before parsing, including non-answer events. Model answer text
 is limited to 64,000 UTF-8 bytes and 128 source entries. Restored answer text is
 limited to 512,000 UTF-8 bytes; expansion is counted before repeated private
 values are joined. Invalid Unicode and empty model answers fail with a readable
 error rather than producing an unusable completed job. These limits are enforced
 locally even when a model does not follow its output schema.
+In isolated mode, provider output also passes a shared strict shape validator before
+returning to the web API; document IDs and line references are then checked against
+the selected notebook snapshot. Provider errors never cause a fallback or retry.
 Overly nested request JSON receives the same structured 400 response as other
 invalid request bodies and cannot admit a job or a cancellation record.
 
@@ -198,6 +209,25 @@ and source requests; cancellation remains available as saved local intent until
 login resumes. Metadata/network failures leave question/recovery retry available.
 
 ## Validation
+
+The [isolated worker](deploy/README.md) has no original note files or privacy vault.
+Codex and AGY receive the same masked application payloads and structured-output
+contracts. Codex reuses an isolated temporary HOME and workspace, with a new ephemeral
+thread for each call. AGY creates a temporary HOME and workspace for each invocation.
+Only selected login files are copied in and refreshed credentials copied back. No
+previous history, rules or plugins are imported. Codex's process and temporary files
+are recycled after 32 calls, 30 minutes of age, or 5 idle minutes, and discarded on
+failure/cancellation. AGY cleans up after each call. An abrupt host crash can leave files
+in the service's private temporary directory. This does not control remote-provider
+retention or guarantee secure disk erasure. Filesystem separation must be verified
+in the actual service namespace, not inferred from unit templates alone.
+
+Streaming previews contain generated text with opaque values hidden. They have no
+restored values or citations and are rendered as literal text. Only a completed,
+validated answer can supply protected values and source links. Previews are removed
+on failure/cancellation and are never persisted as conversation history. Stream GETs
+require the same JWT and job ownership as normal job reads, renew every 20 seconds,
+and reconnect to the existing job without another model submission.
 
 The single runner includes privacy, HTTP admission, real local child-process
 contracts, portable configuration, and frontend build tests. Application

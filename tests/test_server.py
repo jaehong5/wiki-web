@@ -728,25 +728,45 @@ class WorkerTests(SyntheticNotesTests):
             root=Path(tmp)
             (root/'PASEO.md').write_text('Typora License\nSYNTHETIC-KEY-VALUE')
             (root/'Wallet.md').write_text('# Wallet\nUNRELATED-PRIVATE')
+            (root/'Editor.md').write_text('Editor License\nSYNTHETIC-OTHER-KEY')
             job={'cancel_event':threading.Event(),'deadline':time.monotonic()+60}
             prompts=[]
             def fake_invoke(job,prompt,schema):
                 self.assertIs(schema,app.SELECT_SCHEMA)
                 prompts.append(prompt)
                 payload=json.loads(prompt.split('\n',1)[1])
-                return {'paths':[next(item['path'] for item in payload['catalog'] if item['title']=='PASEO.md')],'catalog_only':False}
+                # Select using the actual information available to the model, not a
+                # hard-coded filename that hid the missing flat-label regression.
+                found=[item['path'] for item in payload['catalog']
+                       if 'Typora License' in item['headings'] and 'typora' in item['matches']]
+                self.assertEqual(len(found),1)
+                return {'paths':found,'catalog_only':False}
             with patch.object(app,'ROOT',root),patch.object(app,'invoke',fake_invoke):
-                names,items,overview=app.select_documents(job,'Typora 라이센스키',[],app.document_paths())
+                names,items,overview=app.select_documents(job,'타이포라 라이센스키',[],app.document_paths())
             self.assertEqual(names,['PASEO.md'])
             self.assertFalse(overview)
             self.assertNotIn('SYNTHETIC-KEY-VALUE',json.dumps(items))
             self.assertEqual(len(prompts),1)
             payload=json.loads(prompts[0].split('\n',1)[1])
             flat=next(item for item in payload['catalog'] if item['title']=='PASEO.md')
-            self.assertEqual(flat['headings'],[])
+            self.assertIn('Typora License',flat['headings'])
             self.assertIn('typora',flat['matches'])
             self.assertIn('license',flat['matches'])
             self.assertNotIn('SYNTHETIC-KEY-VALUE',prompts[0])
+            self.assertNotIn('SYNTHETIC-OTHER-KEY',prompts[0])
+
+    def test_flat_catalog_labels_are_derived_after_all_notes_are_masked(self):
+        secret='SyntheticCatalogPrivate9!'
+        (self.root/'App.md').write_text('Editor License\n\n<!-- private -->\n'+secret+'\n<!-- /private -->\n')
+        (self.root/'Other.md').write_text(secret+'\nPassword: SyntheticOther9!\n')
+        job=self.job()
+        context=app.private_context(job,'Editor 라이선스',[],app.document_paths())
+        items={context['aliases'][item['path']]:item for item in context['items']}
+        self.assertIn('Editor License',items['App.md']['headings'])
+        self.assertNotIn(secret,json.dumps(context['items']))
+        self.assertNotIn('SyntheticOther9!',json.dumps(context['items']))
+        for item in context['items']:
+            self.assertLessEqual(len(item['headings']),24)
 
     def test_compound_question_preserves_both_selector_documents(self):
         (self.root/'Typora.md').write_text('Typora License\nSYNTHETIC-LICENSE')

@@ -15,9 +15,12 @@ and application messages currently use Korean.
    validates the signed Access JWT, issuer, audience, and expiry.
 2. The server reads a local snapshot of eligible Markdown notes. Recognized private
    values and explicit private blocks become random placeholders before model input.
-3. A Codex CLI subprocess selects relevant documents and produces an answer with
-   citations. Tool access is disabled by the invocation arguments.
-4. The server restores permitted values from selected evidence locally. The browser
+3. A separate model worker runs Codex or AGY to select relevant documents and
+   produce an answer with citations. It receives audited, masked prompts over a
+   local Unix socket and has no access to the original notebook.
+4. Codex reuses an isolated app-server with a fresh ephemeral conversation per call.
+   The browser shows text as it is generated, with protected values still hidden.
+5. After validating the answer, the server restores permitted values from selected evidence locally. The browser
    renders those values as literal text and can show the original cited source.
 
 **Ordinary note text is still sent to the remote model.** Automatic recognition
@@ -27,15 +30,25 @@ local explicitly; see [PRIVACY.md](PRIVACY.md) for the protection boundary and e
 ## Requirements
 
 - Linux and Python 3.11 or newer.
-- An installed, authenticated Codex CLI with a model available to your account.
-  The CLI must support the options in `backend/server.py`'s `invoke` function;
-  model and CLI availability depend on the installation.
+- An installed, authenticated Codex CLI or Antigravity CLI (`agy`) with a model
+  available to its dedicated service account. Adapters target Codex 0.162.0 and
+  AGY 1.3.2; see `backend/model_providers.py` and verify compatibility on upgrade.
+- systemd and separate Linux service accounts for the isolated worker deployment.
 - Cloudflare Access and an HTTPS hostname for a deployed application.
 - Nginx (or an equivalent reverse proxy) and Cloudflare Tunnel for the provided
   deployment example.
-- Node.js 20+ and Playwright only for browser tests or regenerating the OG PNG.
+- Node.js 20+ and Playwright only for browser tests or regenerating branding PNGs.
 
 ## Install and configure
+
+For a private notebook, use the [isolated deployment guide](deploy/README.md).
+It separates the web API from both CLI credentials and model execution, and supports
+`ai.provider` set to `codex` or `agy`. The operator configures model and effort per
+provider; failures never trigger an automatic retry or provider fallback.
+
+The following commands retain the older direct Codex-only setup for compatibility.
+That setup runs the CLI under the web process's identity and does not provide the
+separate account boundary. AGY requires the isolated worker.
 
 Run these commands from this checkout:
 
@@ -71,7 +84,7 @@ export WIKI_CONFIG="$HOME/.config/wiki-web/config.json"
 .venv/bin/python backend/server.py
 ```
 
-The reasoning effort is currently `medium`. Jobs are limited to one concurrent
+The direct Codex setup uses `medium` reasoning effort. Jobs are limited to one concurrent
 model request globally and 20 admitted questions per owner per hour, with a
 600-second job deadline. State and rate counters live in memory and reset on restart;
 this is intended for a small trusted group, not a public multi-tenant service.
@@ -98,10 +111,11 @@ For a synthetic build without any private configuration:
 
 ## Deployment
 
-[deploy/nginx.conf.example](deploy/nginx.conf.example) and
-[deploy/wiki-web.service.example](deploy/wiki-web.service.example) are templates.
-Set their paths and hostname for your machine; these files do not automatically
-modify any service or other website. The service is a **user** systemd unit.
+The [isolated deployment guide](deploy/README.md) provides two **system** service
+templates. [deploy/nginx.conf.example](deploy/nginx.conf.example) describes the
+reverse proxy. Set their paths and hostname for your machine; these files do not
+automatically modify any service or other website. The older
+[user service](deploy/wiki-web.service.example) supports only direct Codex mode.
 
 With the example topology, Cloudflare Tunnel forwards the hostname to
 `http://127.0.0.1:8081`. Nginx serves the generated static files and forwards `/api/`
@@ -117,6 +131,11 @@ Configure Access so that:
 
 The entrance probes `/api/status` without following sign-in redirects. A valid
 session enters the application automatically; otherwise the visitor uses Open Wiki.
+Both pages link to the public install manifest at `/assets/branding/manifest.json`.
+It provides the Wiki name, green W icons, and a standalone app window. Installed
+apps start at `/` and follow the same sign-in flow. The manifest and icons must stay
+public; application and API authentication still apply. No service worker or offline
+note cache is added.
 Check [Access application path matching](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
 carefully when creating the public exceptions; a hostname-level bypass can also
 match child paths. See [Access cookie settings](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/)
@@ -136,16 +155,27 @@ npx playwright install chromium
 .venv/bin/python -B run_tests.py --browser
 ```
 
-Tests create temporary notes, signing keys, and fake model subprocesses. They do
+Tests create temporary notes, signing keys, Unix sockets and fake model subprocesses. They do
 not read a personal notebook, load production credentials, or make AI requests.
 Browser scenarios use local/mock HTTP responses. These checks do not verify an
-actual Codex account, model availability, or a real Cloudflare Access policy.
+actual provider account, model availability, a deployed OS sandbox, or a real
+Cloudflare Access policy. Worker tests exercise both adapters, local restoration,
+peer identity, output limits, cancellation and detached-helper cleanup.
 
 To regenerate the generic 1200×630 OG PNG from its SVG source:
 
 ```bash
 node scripts/render_branding.cjs
 ```
+
+To regenerate the install icons and manifest from the existing Wanted Sans W:
+
+```bash
+node scripts/render_app_icons.cjs
+```
+
+This also refreshes the manifest URL in both HTML pages. Icon filenames include
+content hashes, and a separate maskable icon keeps the W inside the platform crop.
 
 ## Repository boundaries
 

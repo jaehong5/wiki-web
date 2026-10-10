@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "Personal Wiki",
+  "short_name": "Wiki",
+  "description": "Talk to your notes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#18231f",
+  "theme_color": "#18231f",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/assets/branding/app-wanted-any-192-4919883a2766.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/branding/app-wanted-any-512-de2aa087ea7f.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/branding/app-wanted-maskable-512-0cf4a4eceea8.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

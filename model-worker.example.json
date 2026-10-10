@@ -1,0 +1,18 @@
+{
+  "socket": "/run/wiki-model/worker.sock",
+  "allowed_user": "wiki",
+  "providers": {
+    "codex": {
+      "binary": "/opt/wiki/codex/bin/codex",
+      "model": "YOUR_CODEX_MODEL_ID",
+      "effort": "medium",
+      "state_dir": "/var/lib/wiki-model/codex"
+    },
+    "agy": {
+      "binary": "/opt/wiki/agy/agy",
+      "model": "YOUR_AGY_MODEL_ID",
+      "effort": "medium",
+      "state_dir": "/var/lib/wiki-model/agy"
+    }
+  }
+}

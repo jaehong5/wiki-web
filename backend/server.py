@@ -20,6 +20,10 @@ from privacy import PrivacyVault, TOKEN_RE
 from model_input import EvidenceLine, PreparedPrompt, prepare_prompt
 from privacy_analysis import source_lines
 from settings import load_config
+from model_schemas import ANSWER_LIMIT, SOURCE_LIMIT, SCHEMA, SELECT_SCHEMA
+import model_client
+from model_providers import codex_command
+from model_stream import safe_preview
 
 BASE = Path(__file__).resolve().parent
 CONFIG = load_config(BASE / 'config.json')
@@ -30,35 +34,17 @@ LOCK = threading.Lock()
 JOBS = {}
 RATES = collections.defaultdict(collections.deque)
 LIMIT = threading.BoundedSemaphore(1)
+STREAMS = threading.BoundedSemaphore(4)
 JOB_TTL = 3600
 JOB_TIMEOUT = 600
 BODY_LIMIT = 40000
 DOCUMENT_LIMIT = 300000
 NOTEBOOK_LIMIT = 20000000
 MODEL_OUTPUT_LIMIT = 1024 * 1024
-ANSWER_LIMIT = 64000
 RESTORED_ANSWER_LIMIT = 512000
-SOURCE_LIMIT = 128
 PENDING_CANCEL_LIMIT = 256
 PENDING_CANCEL_OWNER_LIMIT = 64
 TERMINAL = {'completed', 'cancelled', 'failed'}
-SCHEMA = {
-    'type': 'object', 'additionalProperties': False,
-    'properties': {
-        'answer': {'type': 'string', 'minLength': 1, 'maxLength': ANSWER_LIMIT},
-        'sources': {'type': 'array', 'maxItems': SOURCE_LIMIT, 'items': {
-            'type': 'object', 'additionalProperties': False,
-            'properties': {'path': {'type': 'string'}, 'line': {'type': 'integer'}},
-            'required': ['path', 'line'],
-        }},
-    }, 'required': ['answer', 'sources'],
-}
-SELECT_SCHEMA = {
-    'type': 'object', 'additionalProperties': False,
-    'properties': {'paths': {'type': 'array', 'items': {'type': 'string'}},
-                   'catalog_only': {'type': 'boolean'}},
-    'required': ['paths', 'catalog_only'],
-}
 
 
 class Cancelled(Exception):
@@ -160,11 +146,49 @@ def query_terms(question):
     terms = {term for term in re.findall(r'[^\W_]+', question.casefold()) if len(term) >= 2 and term not in ignored}
     aliases = {'라이선스': ('license', 'licence'), '라이센스': ('license', 'licence'),
                '계좌': ('account',), '여권': ('passport',), '지갑': ('wallet',),
-               '비밀번호': ('password', 'pw'), '복구문구': ('wallet',)}
+               '비밀번호': ('password', 'pw'), '복구문구': ('wallet',),
+               '타이포라': ('typora',)}
     for korean, variants in aliases.items():
         if korean in question:
             terms.update(variants)
     return terms
+
+
+def snapshot_headings(sanitized_text):
+    """Include plain-text field labels from an already-masked snapshot.
+
+    Flat notes often put a product name on the line before a private value.
+    Sending only Markdown headings leaves the selector unable to identify them.
+    Keep actual headings first, and add short labels adjacent to placeholders;
+    arbitrary body paragraphs and the private values are not catalog excerpts.
+    """
+    lines = source_lines(sanitized_text)
+    headings = [line.lstrip('#').strip()[:160] for line in lines
+                if re.match(r'^#{1,6}\s', line)][:24]
+    seen = set(headings)
+    for index, line in enumerate(lines):
+        if len(headings) >= 24:
+            break
+        label = line.strip()
+        if not label or label.startswith(('<!--', '#', '```', '~~~')):
+            continue
+        token = TOKEN_RE.search(label)
+        if token:
+            # Keep the complete placeholder and its surrounding syntax. Cutting
+            # at a token can turn a public quote into a known private value.
+            if not TOKEN_RE.sub('', label).strip(' :|=-\t`\'"*+'):
+                continue
+        else:
+            following = next((value.strip() for value in lines[index + 1:index + 6]
+                              if value.strip() and not value.strip().startswith('<!--')), '')
+            if not TOKEN_RE.search(following):
+                continue
+        label = re.sub(r'^[-*+]\s+', '', label)
+        if not label or len(label) > 120 or label in seen:
+            continue
+        seen.add(label)
+        headings.append(label)
+    return headings
 
 
 def catalog(paths, terms=(), job=None):
@@ -218,7 +242,7 @@ def cleanup_loop(stop, interval=30):
 
 def public_job(job):
     return {key: job[key] for key in ('id', 'status', 'stage', 'question', 'answer', 'sources', 'error',
-                                     'display_answer', 'protected_values')
+                                     'display_answer', 'protected_values', 'preview')
             if key in job}
 
 
@@ -338,20 +362,19 @@ def invoke(job, prompt, schema):
     if not isinstance(prompt, PreparedPrompt):
         raise ValueError('검증되지 않은 모델 입력을 차단했습니다.')
     prompt.validate()
+    if CONFIG.get('ai'):
+        purpose = 'select' if schema == SELECT_SCHEMA else 'answer' if schema == SCHEMA else None
+        if purpose is None:
+            raise ValueError('알 수 없는 AI 응답 형식입니다.')
+        return model_client.invoke(CONFIG['ai'], prompt, purpose,
+                                   lambda: checkpoint(job), job['deadline'],
+                                   progress=job.get('_progress') if purpose == 'answer' else None)
     proc = None
     with tempfile.TemporaryDirectory(prefix='wiki-query-') as tmp:
         schema_file = Path(tmp) / 'schema.json'
         output = Path(tmp) / 'answer.json'
         schema_file.write_text(json.dumps(schema))
-        args = [CONFIG['codex'], 'exec', '--ignore-user-config', '--ignore-rules',
-                '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only',
-                '--disable', 'shell_tool', '--disable', 'apps', '--disable', 'multi_agent',
-                '--disable', 'view_image', '--disable', 'browser_use', '--disable', 'computer_use',
-                '--disable', 'code_mode_host', '--disable', 'skill_search', '--disable', 'daemon_auto_start',
-                '--enable', 'skip_host_skill_discovery', '-c', 'web_search="disabled"',
-                '-c', 'model_reasoning_effort="medium"', '-m', CONFIG['model'],
-                '--output-schema', str(schema_file), '--output-last-message', str(output),
-                '--color', 'never', '-']
+        args = codex_command(CONFIG['codex'], CONFIG['model'], 'medium', schema_file, output)
         try:
             checkpoint(job)
             # CLI stderr can contain the prompt; discard it rather than writing a log.
@@ -421,8 +444,7 @@ def private_context(job, question, history, paths):
         checkpoint(job)
         text = safe_docs[name] = vault.sanitize_document(name, snapshots[name])
         title = vault.sanitize(name)
-        headings = [line.lstrip('#').strip()[:160] for line in source_lines(text)
-                    if re.match(r'^#{1,6}\s', line)][:24]
+        headings = snapshot_headings(text)
         visible = TOKEN_RE.sub('', title + '\n' + text).casefold()
         items.append({'path': alias, 'title': title, 'headings': headings,
                       'matches': sorted(term for term in terms if term in visible)})
@@ -458,7 +480,9 @@ def select_documents(job, question, history, paths):
         'and no paths. Otherwise use catalog_only=false. If none are relevant, return no paths. '
         'Do not select unrelated private documents. PRIVATE placeholders hide values retained locally; '
         'use their surrounding titles and labels to choose relevant documents. Never invent or decode values. '
-        'Catalog matches are question terms found in sanitized document text. Use them to find flat notes whose headings are empty.')
+        'Catalog headings include Markdown headings and short plain-text labels beside masked values. '
+        'Match translated product names to these labels as well as document titles. '
+        'Catalog matches are question terms found in sanitized document text. Use them to find flat notes.')
     prompt = prepare_prompt(context['vault'], instructions,
         {'question': context['question'], 'history': context['history'], 'catalog': items})
     checkpoint(job)
@@ -518,6 +542,15 @@ def run_job(job, question, history):
         prompt = prepare_prompt(vault, instructions,
             {'question': context['question'], 'history': context['history'], 'evidence': evidence})
         checkpoint(job)
+        def preview(text):
+            checkpoint(job)
+            text = safe_preview(text)
+            if utf8_size(text) > ANSWER_LIMIT:
+                raise ValueError('응답이 너무 큽니다.')
+            with LOCK:
+                if job['status'] == 'running' and not job['cancel_event'].is_set():
+                    job['preview'] = text
+        job['_progress'] = preview
         result = invoke(job, prompt, SCHEMA)
         checkpoint(job)
         if not isinstance(result, dict) or not isinstance(result.get('answer'), str) or not isinstance(result.get('sources'), list):
@@ -582,6 +615,8 @@ def run_job(job, question, history):
             job.update(outcome, finished=time.monotonic())
             job.pop('stage', None)
             job.pop('_privacy', None)
+            job.pop('_progress', None)
+            job.pop('preview', None)
             if outcome['status'] != 'completed':
                 job.pop('snapshots', None)
                 job.pop('history_secrets', None)
@@ -652,9 +687,49 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 job = JOBS.get(ident)
                 data = public_job(job) if job and job['owner'] == owner else None
-            self.reply(200 if data else 404, data or {'error': '질문 기록이 만료됐습니다.'})
+            if data and parse_qs(parsed.query).get('stream') == ['1']:
+                self.stream_job(ident, owner)
+            else:
+                self.reply(200 if data else 404, data or {'error': '질문 기록이 만료됐습니다.'})
         else:
             self.reply(404, {'error': 'Not found'})
+
+    def stream_job(self, ident, owner):
+        # Short renewable GETs keep auth checks current. They only observe a job;
+        # disconnects/reconnects cannot cause another billable model invocation.
+        if not STREAMS.acquire(False):
+            self.reply(503, {'error': '답변 연결을 잠시 후 다시 확인합니다.'})
+            return
+        try:
+            self.connection.settimeout(2)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/x-ndjson; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('X-Accel-Buffering', 'no')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.close_connection = True
+            until = time.monotonic() + 20
+            previous, last = None, 0
+            while time.monotonic() < until:
+                with LOCK:
+                    job = JOBS.get(ident)
+                    data = public_job(job) if job and job['owner'] == owner else None
+                if data is None:
+                    break
+                payload = json.dumps(data, ensure_ascii=True).encode('ascii') + b'\n'
+                if payload != previous or time.monotonic() - last >= 2:
+                    self.wfile.write(payload if payload != previous else b'\n')
+                    self.wfile.flush()
+                    previous, last = payload, time.monotonic()
+                if data['status'] in TERMINAL:
+                    break
+                time.sleep(.1)
+        except (OSError, TimeoutError):
+            pass
+        finally:
+            STREAMS.release()
 
     def do_POST(self):
         owner = self.authenticate()

@@ -1,0 +1,43 @@
+# System service. Use config.worker.example.json, not the legacy direct-CLI config.
+[Unit]
+Description=Private Wiki web API
+After=network-online.target wiki-model.service
+Wants=wiki-model.service
+
+[Service]
+Type=simple
+User=wiki
+Group=wiki
+SupplementaryGroups=wiki-model
+WorkingDirectory=/opt/wiki/app
+Environment=WIKI_CONFIG=/etc/wiki/config.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -B /opt/wiki/app/server.py
+UMask=0077
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectProc=invisible
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Replace /srv/private-notes with the actual host source. Keep this view read-only.
+BindReadOnlyPaths=/srv/private-notes:/srv/wiki-notes
+InaccessiblePaths=-/var/lib/wiki-model -/var/lib/wiki -/run/docker.sock -/var/lib/docker
+InaccessiblePaths=-/etc/systemd/system -/etc/nginx -/etc/caddy
+MemoryMax=1G
+TasksMax=64
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

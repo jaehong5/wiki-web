@@ -1,6 +1,7 @@
 """Load installation settings without bundling personal data in the source tree."""
 import json
 import os
+import pwd
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -14,7 +15,10 @@ def load_config(default_path):
         raise ValueError('Set WIKI_CONFIG to a readable JSON configuration file.') from exc
     if not isinstance(config, dict):
         raise ValueError('Wiki configuration must be a JSON object.')
-    for field in ('origin', 'issuer', 'audience', 'notes_root', 'codex', 'model'):
+    fields = ('origin', 'issuer', 'audience', 'notes_root')
+    if 'ai' not in config:
+        fields += ('codex', 'model')  # Compatibility for existing Codex-only installations.
+    for field in fields:
         if not isinstance(config.get(field), str) or not config[field].strip():
             raise ValueError(f'Wiki configuration requires a nonempty {field}.')
     for field in ('origin', 'issuer'):
@@ -33,4 +37,15 @@ def load_config(default_path):
     port = config.get('port')
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError('Wiki port must be an integer between 0 and 65535.')
+    if 'ai' in config:
+        ai = config['ai']
+        if (type(ai) is not dict or set(ai) != {'provider', 'socket', 'worker_user'}
+                or ai['provider'] not in ('codex', 'agy')
+                or type(ai['socket']) is not str or not Path(ai['socket']).is_absolute()
+                or type(ai['worker_user']) is not str or not ai['worker_user']):
+            raise ValueError('Wiki ai requires provider, absolute socket, and worker_user.')
+        try:
+            ai['worker_uid'] = pwd.getpwnam(ai['worker_user']).pw_uid
+        except KeyError as exc:
+            raise ValueError('Create the dedicated model worker account first.') from exc
     return config

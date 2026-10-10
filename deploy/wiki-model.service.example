@@ -1,0 +1,44 @@
+# System service. Create the wiki-model user/group and protected paths first.
+# Hide EVERY host path containing notes, including all original bind-mount sources.
+[Unit]
+Description=Isolated Wiki model worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wiki-model
+Group=wiki-model
+WorkingDirectory=/opt/wiki/app
+Environment=HOME=/var/lib/wiki-model
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -B /opt/wiki/app/model_worker.py --config /etc/wiki-model/config.json
+RuntimeDirectory=wiki-model
+RuntimeDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectProc=invisible
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/wiki-model /run/wiki-model
+InaccessiblePaths=-/srv -/etc/wiki -/var/lib/wiki -/run/docker.sock -/var/lib/docker
+InaccessiblePaths=-/etc/systemd/system -/etc/nginx -/etc/caddy
+MemoryMax=2G
+TasksMax=128
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 let history = [], activeJob = null, activeState = null, busy = false, pollGeneration = 0;
 let sessionPhase = 'checking';
 let sourceGeneration = 0, sourceController = null;
+let previewMessage = null;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const STORAGE_KEY = 'wiki-active-job';
 class ApiError extends Error {
@@ -14,13 +15,37 @@ async function api(path, options = {}) {
   const abort = () => controller.abort();
   if (options.signal?.aborted) abort();
   options.signal?.addEventListener('abort', abort, {once:true});
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), options.onProgress ? 25000 : 12000);
   try {
     // Access redirects leave this origin. Inspect the redirect before login CORS
     // turns it into an indistinguishable network failure.
     const response = await fetch(path, {credentials:'same-origin', cache:'no-store', ...options, redirect:'manual', signal:controller.signal});
     if (response.type === 'opaqueredirect' || response.status === 401 || response.redirected) throw new ApiError('로그인이 만료됐어요. 아래 버튼으로 다시 로그인해주세요.', 401);
     if (response.status === 413) throw new ApiError('대화 내용이 너무 큽니다. 새 질문으로 시작해주세요.', 413);
+    if (response.ok && options.onProgress && response.headers.get('content-type')?.includes('application/x-ndjson')) {
+      const reader=response.body.getReader(), decoder=new TextDecoder('utf-8',{fatal:true});
+      let buffer='', latest=null;
+      try {
+        while (true) {
+          const {done,value}=await reader.read();
+          buffer+=decoder.decode(value,{stream:!done});
+          if (buffer.length>4000000) throw new Error('Stream too large');
+          let end;
+          while ((end=buffer.indexOf('\n'))>=0) {
+            const line=buffer.slice(0,end); buffer=buffer.slice(end+1);
+            if (!line.trim()) continue;
+            const data=JSON.parse(line);
+            if (!data || typeof data!=='object' || !['running','cancelling','completed','failed','cancelled'].includes(data.status)) throw new Error('Invalid stream');
+            latest=data; options.onProgress(data);
+            if (['completed','failed','cancelled'].includes(data.status)) return {...data,_streamed:true};
+          }
+          if (done) {
+            if (buffer.trim() || !latest) throw new Error('Incomplete stream');
+            return {...latest,_streamed:true};
+          }
+        }
+      } finally { await reader.cancel().catch(()=>{}); }
+    }
     const isJson = response.headers.get('content-type')?.includes('application/json');
     if (!isJson) {
       if (response.ok) throw new ApiError('로그인 상태를 확인해주세요. 페이지를 새로고침해주세요.', 401);
@@ -64,6 +89,7 @@ function authenticationNotice(error) {
 }
 function requireAuthentication(error) {
   sessionPhase='required'; ++pollGeneration;
+  clearPreview();
   authenticationNotice(error); renderInteraction();
 }
 document.querySelectorAll('[data-reauthenticate]').forEach(button => button.addEventListener('click', () => { if(canInteract('authenticate')) location.reload(); }));
@@ -198,7 +224,22 @@ $('close-source').addEventListener('click', closeSource);
 $('source-dialog').addEventListener('cancel', event => { event.preventDefault(); closeSource(); });
 $('source-dialog').addEventListener('close', () => { if (!$('source-dialog').open) clearSource(); });
 $('source-dialog').addEventListener('click', event => { if (event.target === $('source-dialog')) { const r = event.target.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeSource(); } });
-function finishJob() { saveJob(null); }
+function clearPreview() { previewMessage?.remove(); previewMessage=null; }
+function showPreview(data) {
+  if (data.status!=='running' || typeof data.preview!=='string' || !data.preview || activeState?.cancelRequested) return;
+  if (!previewMessage) {
+    addMessage('assistant','');
+    previewMessage=$('messages').lastElementChild;
+    previewMessage.classList.add('streaming');
+    previewMessage.querySelector('.message-label').textContent='YOUR NOTES · 작성 중';
+    previewMessage.setAttribute('aria-busy','true');
+  }
+  const body=previewMessage.querySelector('.message-body');
+  body.style.whiteSpace='pre-wrap';
+  // Incomplete Markdown is literal text; no citations or value restoration.
+  body.textContent=data.preview;
+}
+function finishJob() { clearPreview(); saveJob(null); }
 function continueAfterSubmissionError(error, id, question) {
   if (activeJob!==id || !canInteract('request')) return false;
   if (error.status===401) { requireAuthentication(error); return false; }
@@ -222,7 +263,15 @@ async function watchJob(id, request = null, resumed = false, question = '') {
   while (activeJob===id && generation===pollGeneration) {
     sendCancellation(activeState);
     try {
-      const data = await api('/api/jobs/'+id);
+      const data = await api('/api/jobs/'+id+'?stream=1', {onProgress:data=>{
+        if (activeJob!==id || generation!==pollGeneration || data.id!==id) return;
+        if (request) { saveJob(id); request=null; }
+        if (!questionShown && data.question) { $('welcome').hidden=true; addMessage('user',data.question); questionShown=true; }
+        showPreview(data);
+        const stage=activeState.cancelRequested?'질문을 중단하고 있어요…':data.stage==='selecting'?'관련 문서를 찾고 있어요…':'답변을 작성하고 있어요…';
+        if (data.status==='running') notice(`${stage} ${Math.floor((Date.now()-started)/1000)}초`);
+        sendCancellation(activeState);
+      }});
       if (activeJob!==id) return;
       // Any successful lookup confirms acceptance. Never recreate an expired job.
       if (request) saveJob(id);
@@ -233,6 +282,7 @@ async function watchJob(id, request = null, resumed = false, question = '') {
       question=data.question || question;
       if (!questionShown && data.question) { $('welcome').hidden=true; addMessage('user',data.question); questionShown=true; }
       if (data.status==='completed') {
+        clearPreview();
         const display=typeof data.display_answer==='string';
         const values=display && data.protected_values && typeof data.protected_values==='object' && !Array.isArray(data.protected_values) ? data.protected_values : {};
         addMessage('assistant',display ? data.display_answer : data.answer,data.sources,id,display ? values : null);
@@ -244,7 +294,8 @@ async function watchJob(id, request = null, resumed = false, question = '') {
       failures=0;
       const stage=activeState.cancelRequested || data.status==='cancelling'?'질문을 중단하고 있어요…':data.stage==='selecting'?'관련 문서를 찾고 있어요…':'답변을 준비하고 있어요…';
       notice(`${stage} ${Math.floor((Date.now()-started)/1000)}초`);
-      await wait(1800);
+      showPreview(data);
+      if (!data._streamed) await wait(1800);
     } catch (error) {
       if (activeJob!==id || generation!==pollGeneration) return;
       if (activeState.accepted) request=null;

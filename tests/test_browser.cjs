@@ -705,10 +705,79 @@ async function checkSessionTransitions(browser){
  }
  console.log('Restored accepted/unconfirmed jobs wait for initial authentication; cancellation during checking or expired login preserves exact intent and resumes cancellation only after login, without any query replay.');
 }
+async function checkStreaming(browser){
+ let job,stream,submits=0,connections=0,deny=false;
+ const token='[[PRIVATE_'+'a'.repeat(32)+']]';
+ const secret='SYNTHETIC <img src=x onerror=alert(1)> VALUE';
+ const site=http.createServer((req,res)=>{
+  const url=new URL(req.url,'http://localhost');
+  const json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data));};
+  if(url.pathname==='/api/status')return json(200,{notes:2});
+  if(url.pathname==='/api/query'){
+   let body='';req.on('data',b=>body+=b);req.on('end',()=>{
+    const data=JSON.parse(body);submits++;job={id:data.request_id,question:data.question,status:'running',stage:'answering'};
+    json(202,{id:job.id});
+   });return;
+  }
+  if(url.pathname.endsWith('/cancel')){
+   job.status='cancelled';if(stream&&!stream.destroyed)stream.end(JSON.stringify(job)+'\n');
+   return json(200,job);
+  }
+  if(url.pathname.startsWith('/api/jobs/')){
+   connections++;
+   if(deny)return json(401,{error:'synthetic expired auth'});
+   assert.equal(url.searchParams.get('stream'),'1');stream=res;
+   res.writeHead(200,{'Content-Type':'application/x-ndjson'});
+   res.write(JSON.stringify(job)+'\n');
+   const bytes=Buffer.from(JSON.stringify({...job,preview:'생성 중인 문장 [보호된 값]'})+'\n');
+   // Split within a multibyte Korean code point, not just a JSON boundary.
+   const cut=bytes.indexOf(Buffer.from('생'))+1;
+   res.write(bytes.subarray(0,cut));setTimeout(()=>{if(!res.destroyed)res.write(bytes.subarray(cut));},30);
+   return;
+  }
+  const name=fileName(url.pathname);
+  if(!fs.existsSync(root+name))return json(404,{});
+  res.writeHead(200,{'Content-Type':contentType(name)});res.end(fs.readFileSync(root+name));
+ });
+ const origin=await listen(site),page=await browser.newPage();
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const preview=()=>page.waitForFunction(()=>document.querySelector('.streaming .message-body')?.textContent.includes('생성 중'));
+ try{
+  await page.goto(origin+'/app/');await send(page);await preview();
+  assert.equal(await page.locator('.sources').count(),0);
+  assert.equal(await page.locator('#send').isDisabled(),true);
+  assert(!(await page.locator('#messages').innerText()).includes(secret));
+  assert(!(await page.evaluate(()=>sessionStorage.getItem('wiki-active-job'))).includes('생성 중'));
+  job={...job,status:'completed',display_answer:'결과 '+token,answer:'결과 '+secret,protected_values:{[token]:secret},sources:[{path:'Example.md',line:1}]};
+  stream.end(JSON.stringify(job)+'\n');
+  await page.waitForFunction(()=>!document.querySelector('#send').disabled);
+  assert.equal(await page.locator('.assistant').count(),1);assert.equal(await page.locator('.streaming').count(),0);
+  assert((await page.locator('.assistant').innerText()).includes(secret));assert.equal(await page.locator('.assistant img').count(),0);
+  assert.equal(await page.locator('.sources button').count(),1);
+  await send(page,'failed stream');await preview();
+  stream.end(JSON.stringify({...job,status:'failed',error:'synthetic stream failure'})+'\n');
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('synthetic stream failure'));
+  assert.equal(await page.locator('.streaming').count(),0);assert.equal(await page.locator('.assistant').count(),1);
+  await send(page,'disconnect');await preview();
+  const before=connections;stream.destroy();
+  await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('연결을 다시'));
+  while(connections===before)await new Promise(resolve=>setTimeout(resolve,50));
+  await preview();assert.equal(submits,3,'stream reconnect must never re-submit an accepted query');
+  await page.locator('#cancel').click();await page.waitForFunction(()=>!document.querySelector('#send').disabled);
+  assert.equal(await page.locator('.streaming').count(),0);
+  await send(page,'auth expires');await preview();deny=true;stream.end();
+  await page.waitForFunction(()=>!document.querySelector('#reauthenticate').hidden);
+  assert.equal(await page.locator('.streaming').count(),0);
+  assert.equal(JSON.parse(await page.evaluate(()=>sessionStorage.getItem('wiki-active-job'))).id,job.id);
+  assert.equal(submits,4);assert.deepEqual(errors,[]);
+  console.log('Real chunked streams render before completion, decode split UTF-8, restore values only after validation, and recover without duplicate requests.');
+ }finally{await page.close();await closeServer(site);}
+}
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try{
   await checkLanding(browser);
+  await checkStreaming(browser);
   await checkPrivateHistory(browser);
   await checkAcceptedHistoryRecovery(browser);
   await checkCancellationRaces(browser);
